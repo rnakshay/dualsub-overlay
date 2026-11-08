@@ -15,8 +15,8 @@ corner shows it is on.
 2. **Detect** — every 200 ms a sparse sample of the bottom 30% is checked; only
    when the near-white text in it changes is the band converted in full, and
    only centred text is treated as a subtitle. After five rejected reads in a
-   row (menus, home screens) it checks once a second until a real subtitle
-   turns up, and a static non-subtitle is retried at most twice.
+   row (menus, home screens) it checks once a second until the subtitle area
+   is clear again, and a static non-subtitle is retried at most twice.
 3. **OCR** — the text's bounding box is split into lines, and the lines are read
    in parallel by two Tesseract engines (German `tessdata_fast` model).
    Low-confidence reads — fading subtitles, the player's own controls — are
@@ -26,8 +26,10 @@ corner shows it is on.
    wrapped over two lines is translated as one.
 5. **Overlay** — the English sits above the tallest German seen so far, so a
    new two-line subtitle never runs into it, and stays 2.5 s after the German
-   goes. Only near-white pixels count as subtitle, so the yellow overlay is
-   never read back in.
+   goes. A new line that cannot be read with confidence shows `~` instead.
+   Only pure-colour pixels count as subtitle (white, and the teletext colours
+   ARD uses for speakers), so the overlay's half-blue yellow is never read
+   back in.
 
 Measured live on Prime Video on a TCL Android 11 TV (Realtek, 4× Cortex-A55 @
 1.3 GHz, 32-bit): the English appears ~1.0 s after a one-line German subtitle

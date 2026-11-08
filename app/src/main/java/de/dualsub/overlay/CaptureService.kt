@@ -204,6 +204,10 @@ class CaptureService : Service() {
         val centred = bright >= MIN_BRIGHT &&
                 kotlin.math.abs((minX + maxX) / 2 - width / 2) <= width * CENTRE_TOLERANCE
         if (bright >= MIN_BRIGHT && !centred) junkStreak++
+        // A clear band is what video looks like between two subtitles; menus
+        // almost never have one. Back to full speed, so the first line after
+        // browsing is caught at once -- an empty band costs only the sparse check.
+        if (bright < MIN_BRIGHT) junkStreak = 0
         if (!centred) {
             if (!lastWasEmpty) {
                 overlay.clearAfter(LINGER_MS)
@@ -246,6 +250,18 @@ class CaptureService : Service() {
             Diag.info("? skipped, ${confidence}% sure: ${german.replace("\n", " / ").take(70)}")
             pendingGerman = if (mostlyLetters) german else ""
             junkStreak++
+            // While watching, say "something is there, couldn't read it" rather
+            // than leave the previous line's English up. Not on menus: once
+            // they have tipped it into slow mode, show nothing.
+            // A blurred read of the line already up (it is fading out) leaves
+            // its English alone.
+            if (junkStreak < JUNK_STREAK) {
+                if (!resembles(german, lastGerman)) {
+                    overlay.show(UNCLEAR, englishBottom((bandTop + minY) / scale))
+                }
+            } else if (junkStreak == JUNK_STREAK) {
+                overlay.clear()
+            }
             if (sig == retrySig) retries++ else { retrySig = sig; retries = 1 }
             // A fading subtitle reads cleanly a frame or two later, so look
             // again -- but only twice: a static banner would otherwise be
@@ -292,6 +308,8 @@ class CaptureService : Service() {
             // A newer generation is fine if it is still the same German line.
             if (english == null || (gen != generation && german != lastGerman)) {
                 if (english == null) Diag.warn("#$n not translated: ${shown.replace("|", " / ")}")
+                else Diag.info("#$n dropped, screen moved on before its English arrived: " +
+                        shown.replace("|", " / "))
                 return@execute
             }
             overlay.show(english, bottomPx)
@@ -456,6 +474,14 @@ class CaptureService : Service() {
         if (lines.any { it.startsWith("-") }) lines.joinToString("\n")
         else lines.joinToString(" ")
 
+    /** Do at least 40% of [current]'s words turn up in [read]? */
+    private fun resembles(read: String, current: String): Boolean {
+        val words = current.lowercase().split(Regex("\\W+")).filter { it.length > 1 }
+        if (words.isEmpty()) return false
+        val seen = read.lowercase().split(Regex("\\W+")).toSet()
+        return words.count { it in seen } >= words.size * 0.4
+    }
+
     private fun secs(ms: Long) = String.format(java.util.Locale.ROOT, "%.1fs", ms / 1000.0)
 
     private fun ageMs(frameNanos: Long) = (System.nanoTime() - frameNanos) / 1_000_000
@@ -526,6 +552,7 @@ class CaptureService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val INTERVAL_MS = 200L
         private const val IDLE_INTERVAL_MS = 1000L
+        private const val UNCLEAR = "~"
         private const val JUNK_STREAK = 5
         private const val MAX_RETRIES = 2
         private const val CENTRE_TOLERANCE = 0.12f  // text centre within 12% of screen centre
