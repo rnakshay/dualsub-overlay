@@ -181,11 +181,7 @@ class CaptureService : Service() {
                     val g = (row[i + 1].toInt() and 0xFF) * a / 255
                     val b = (row[i + 2].toInt() and 0xFF) * a / 255
                     i += pixelStride
-                    val hi = maxOf(r, maxOf(g, b))
-                    val lo = minOf(r, minOf(g, b))
-                    // Only near-white counts as subtitle: our own yellow overlay
-                    // and coloured picture content are left out.
-                    val isText = hi > TEXT_LUM && hi - lo < NEUTRAL_SPREAD
+                    val isText = isSubtitlePixel(r, g, b)
                     val v = if (isText) 0 else 255     // Tesseract wants dark on light
                     pixels[y * width + x] = (0xFF shl 24) or (v shl 16) or (v shl 8) or v
                     if (isText) {
@@ -357,8 +353,7 @@ class CaptureService : Service() {
                 val r = ((c shr 16) and 0xFF) * a / 255
                 val g = ((c shr 8) and 0xFF) * a / 255
                 val b = (c and 0xFF) * a / 255
-                val hi = maxOf(r, maxOf(g, b))
-                val isText = hi > TEXT_LUM && hi - minOf(r, minOf(g, b)) < NEUTRAL_SPREAD
+                val isText = isSubtitlePixel(r, g, b)
                 pixels[y * w + x] = if (isText) 0xFF000000.toInt() else -1
                 if (isText) {
                     if (x < minX) minX = x; if (x > maxX) maxX = x
@@ -401,8 +396,7 @@ class CaptureService : Service() {
                 val r = (buf.get(i).toInt() and 0xFF) * a / 255
                 val g = (buf.get(i + 1).toInt() and 0xFF) * a / 255
                 val b = (buf.get(i + 2).toInt() and 0xFF) * a / 255
-                val hi = maxOf(r, maxOf(g, b))
-                if (hi > TEXT_LUM && hi - minOf(r, minOf(g, b)) < NEUTRAL_SPREAD) {
+                if (isSubtitlePixel(r, g, b)) {
                     cells[(y / CELL_H) * gridW + x / CELL_W]++
                 }
                 x += 4
@@ -537,8 +531,21 @@ class CaptureService : Service() {
         private const val CENTRE_TOLERANCE = 0.12f  // text centre within 12% of screen centre
         private const val BAND_FROM = 0.70f     // bottom 30% of the screen
         private const val MIN_BRIGHT = 150      // fewer text pixels = no subtitle
-        private const val TEXT_LUM = 170
-        private const val NEUTRAL_SPREAD = 60   // white/grey, not yellow or picture colour
+        private const val CHANNEL_ON = 170      // a subtitle colour channel is fully on...
+        private const val CHANNEL_OFF = 90      // ...or fully off
+
+        /**
+         * Subtitle colours are teletext's pure ones -- white, yellow, cyan, green,
+         * magenta: every channel fully on or fully off. ARD colours speakers this
+         * way. Our own overlay yellow (FFE27A) has blue at half (0x7A) and so is
+         * never read back in; picture content is mostly mixed tones too.
+         */
+        fun isSubtitlePixel(r: Int, g: Int, b: Int): Boolean {
+            if (maxOf(r, maxOf(g, b)) <= CHANNEL_ON) return false
+            return (r > CHANNEL_ON || r < CHANNEL_OFF) &&
+                    (g > CHANNEL_ON || g < CHANNEL_OFF) &&
+                    (b > CHANNEL_ON || b < CHANNEL_OFF)
+        }
         private const val CELL_W = 32
         private const val CELL_H = 16
         private const val CELL_ON = 12

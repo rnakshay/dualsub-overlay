@@ -14,9 +14,9 @@ import android.widget.TextView
 /**
  * The English line, drawn over whatever app is playing.
  *
- * Yellow on purpose: CaptureService only treats near-white pixels as subtitle
- * text, so this window -- which the screen capture also sees -- is never read
- * back in as German.
+ * Yellow on purpose, with blue at half: CaptureService only reads pure-colour
+ * pixels (every channel fully on or off) as subtitle, so this window -- which
+ * the screen capture also sees -- is never read back in as German.
  */
 class Overlay(private val context: Context) {
 
