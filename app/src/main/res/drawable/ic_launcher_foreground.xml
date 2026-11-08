@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Two subtitle bars: the English (yellow) sitting on the German (white). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFE27A"
+        android:pathData="M39,44 h30 a5,5 0 0 1 0,10 h-30 a5,5 0 0 1 0,-10 z" />
+    <path
+        android:fillColor="#F2F2F2"
+        android:pathData="M33,60 h42 a5,5 0 0 1 0,10 h-42 a5,5 0 0 1 0,-10 z" />
+</vector>

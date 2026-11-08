@@ -74,6 +74,7 @@ class CaptureService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, notification())
+        Diag.init(this)
         if (intent == null || projection != null) return START_NOT_STICKY
 
         scale = intent.getFloatExtra(EXTRA_SCALE, 1f).coerceIn(0.25f, 1f)
@@ -89,7 +90,7 @@ class CaptureService : Service() {
             worker = HandlerThread("ocr").also { it.start() }
             handler = Handler(worker.looper)
             handler.post {
-                try { bench(omp, engineCount) } catch (e: Exception) { Log.e(TAG, "bench failed", e) }
+                try { bench(omp, engineCount) } catch (e: Exception) { Diag.error("Benchmark failed", e) }
                 stopSelf()
             }
             return START_NOT_STICKY
@@ -104,7 +105,7 @@ class CaptureService : Service() {
         translator = Translator(filesDir)
         net.execute { translator.warmUp() }     // open the TLS connection before the first line
         overlay = Overlay(this).also { it.attach() }
-        if (!translator.ready) Log.w(TAG, "no DeepL key in files/deepl_key -- showing nothing")
+        if (!translator.ready) Diag.error("No DeepL key (files/deepl_key): nothing will be translated")
 
         val bounds = getSystemService(WindowManager::class.java).maximumWindowMetrics.bounds
         screenH = bounds.height()
@@ -112,12 +113,13 @@ class CaptureService : Service() {
         width = (bounds.width() * scale).toInt()
         height = (bounds.height() * scale).toInt()
         bandTop = (height * BAND_FROM).toInt()
-        Log.i(TAG, "start: screen ${bounds.width()}x$screenH, capture ${width}x$height, " +
-                "band rows $bandTop..$height, every ${INTERVAL_MS}ms, omp=$omp")
+        Diag.resetSession()
+        Diag.info("Started: capture ${width}x$height, every ${INTERVAL_MS} ms, " +
+                "$engineCount OCR engine(s) x $omp threads")
 
         val mpm = getSystemService(MediaProjectionManager::class.java)
         val mp = mpm.getMediaProjection(code, data) ?: run {
-            Log.e(TAG, "no media projection granted"); stopSelf(); return START_NOT_STICKY
+            Diag.error("Screen capture not granted"); stopSelf(); return START_NOT_STICKY
         }
         projection = mp
         mp.registerCallback(object : MediaProjection.Callback() {
@@ -133,7 +135,7 @@ class CaptureService : Service() {
         handler.post {
             val t = SystemClock.elapsedRealtime()
             engines = List(engineCount) { initTesseract() }
-            Log.i(TAG, "tesseract ready in ${SystemClock.elapsedRealtime() - t}ms")
+            Diag.info("OCR ready in ${SystemClock.elapsedRealtime() - t} ms")
             handler.postDelayed(tick, INTERVAL_MS)
         }
         return START_NOT_STICKY
@@ -141,7 +143,7 @@ class CaptureService : Service() {
 
     private val tick = object : Runnable {
         override fun run() {
-            try { poll() } catch (e: Exception) { Log.e(TAG, "poll failed", e) }
+            try { poll() } catch (e: Exception) { Diag.error("Reading the screen failed", e) }
             handler.postDelayed(this, if (junkStreak >= JUNK_STREAK) IDLE_INTERVAL_MS else INTERVAL_MS)
         }
     }
@@ -244,7 +246,8 @@ class CaptureService : Service() {
         val confirmed = confidence >= MIN_CONFIDENCE_TWICE && german == pendingGerman
         val plausible = mostlyLetters && (confidence >= MIN_CONFIDENCE || confirmed)
         if (!plausible) {
-            Log.i(TAG, "skipped conf=$confidence \"${german.replace('\n', '|')}\"")
+            Diag.skippedRead()
+            Diag.info("? skipped, ${confidence}% sure: ${german.replace("\n", " / ").take(70)}")
             pendingGerman = if (mostlyLetters) german else ""
             junkStreak++
             if (sig == retrySig) retries++ else { retrySig = sig; retries = 1 }
@@ -280,8 +283,9 @@ class CaptureService : Service() {
         val query = forTranslation(germanLines)
         translator.cached(query)?.let { english ->
             overlay.show(english, bottomPx)
-            Log.i(TAG, "#$n copy=${copyMs}ms ocr=${ocrMs}ms cached " +
-                    "shownAfter=${ageMs(frameNanos)}ms \"$shown\" -> \"$english\"")
+            val age = ageMs(frameNanos)
+            Diag.shown(age)
+            Diag.info("#$n ${secs(age)} (cached)  ${shown.replace("|", " / ")}  →  ${english.replace('\n', ' ')}")
             return
         }
         if (net.isShutdown) return
@@ -291,13 +295,14 @@ class CaptureService : Service() {
             val deeplMs = ms(tNet, SystemClock.elapsedRealtimeNanos())
             // A newer generation is fine if it is still the same German line.
             if (english == null || (gen != generation && german != lastGerman)) {
-                Log.i(TAG, "#$n dropped (${if (english == null) "no translation" else "superseded"})")
+                if (english == null) Diag.warn("#$n not translated: ${shown.replace("|", " / ")}")
                 return@execute
             }
             overlay.show(english, bottomPx)
-            Log.i(TAG, "#$n conf=$confidence copy=${copyMs}ms ocr=${ocrMs}ms deepl=${deeplMs}ms " +
-                    "shownAfter=${ageMs(frameNanos)}ms chars=${translator.charsSent} " +
-                    "\"$shown\" -> \"${english.replace('\n', '|')}\"")
+            val age = ageMs(frameNanos)
+            Diag.shown(age)
+            Diag.info("#$n ${secs(age)} (ocr ${secs(ocrMs)}, deepl ${secs(deeplMs)})  " +
+                    "${shown.replace("|", " / ")}  →  ${english.replace('\n', ' ')}")
         }
     }
 
@@ -457,6 +462,8 @@ class CaptureService : Service() {
         if (lines.any { it.startsWith("-") }) lines.joinToString("\n")
         else lines.joinToString(" ")
 
+    private fun secs(ms: Long) = String.format(java.util.Locale.ROOT, "%.1fs", ms / 1000.0)
+
     private fun ageMs(frameNanos: Long) = (System.nanoTime() - frameNanos) / 1_000_000
 
     private fun initTesseract(): TessBaseAPI {
@@ -504,7 +511,7 @@ class CaptureService : Service() {
                 engines = emptyList()
                 val chars = if (::translator.isInitialized) translator.charsSent else 0
                 running = false
-                Log.i(TAG, "stopped after $lines lines, $chars chars to DeepL")
+                Diag.info("Stopped after $lines lines, $chars characters sent to DeepL")
                 worker.quitSafely()
             }
         }

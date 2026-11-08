@@ -1,6 +1,5 @@
 package de.dualsub.overlay
 
-import android.util.Log
 import android.util.LruCache
 import org.json.JSONObject
 import java.io.File
@@ -44,7 +43,7 @@ class Translator(filesDir: File, private val targetLang: String = "EN-GB") {
             conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
             conn.outputStream.use { it.write(body.toByteArray()) }
             if (conn.responseCode != 200) {
-                Log.w(CaptureService.TAG, "DeepL HTTP ${conn.responseCode}")
+                Diag.error("DeepL refused (HTTP ${conn.responseCode}${explain(conn.responseCode)})")
                 conn.errorStream?.use { it.readBytes() }
                 return null
             }
@@ -57,9 +56,16 @@ class Translator(filesDir: File, private val targetLang: String = "EN-GB") {
             cache.put(text, out)
             out
         } catch (e: Exception) {
-            Log.w(CaptureService.TAG, "DeepL failed: $e")
+            Diag.error("DeepL unreachable", e)
             null
         }
+    }
+
+    private fun explain(code: Int) = when (code) {
+        403 -> ": key rejected"
+        429 -> ": too many requests"
+        456 -> ": monthly quota used up"
+        else -> ""
     }
 
     /** Opens the connection early and logs this month's usage. */
@@ -72,10 +78,12 @@ class Translator(filesDir: File, private val targetLang: String = "EN-GB") {
             conn.readTimeout = 6000
             conn.setRequestProperty("Authorization", "DeepL-Auth-Key $k")
             val json = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
-            Log.i(CaptureService.TAG, "DeepL usage this month: " +
-                    "${json.optLong("character_count")}/${json.optLong("character_limit")} chars")
+            val used = json.optLong("character_count")
+            val limit = json.optLong("character_limit")
+            Diag.deeplUsage = "%,d of %,d".format(used, limit)
+            Diag.info("DeepL: ${Diag.deeplUsage} characters used this month")
         } catch (e: Exception) {
-            Log.w(CaptureService.TAG, "DeepL warm-up failed: $e")
+            Diag.error("DeepL unreachable at start", e)
         }
     }
 }

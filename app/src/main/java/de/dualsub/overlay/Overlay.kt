@@ -57,11 +57,8 @@ class Overlay(private val context: Context) {
 
     /** "● dualsub" in the top-left corner: small and faint, just enough to know it is on. */
     private fun addBadge() {
-        val label = android.text.SpannableString("●  dualsub").apply {
-            setSpan(android.text.style.ForegroundColorSpan(COLOUR), 0, 1, 0)
-        }
         val tv = TextView(context).apply {
-            text = label
+            text = badgeLabel(Diag.healthy)
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_PX, BADGE_PX)
             alpha = BADGE_ALPHA
@@ -82,6 +79,12 @@ class Overlay(private val context: Context) {
         }
         wm.addView(tv, lp)
         badge = tv
+        // Changes only when an error comes or goes: no polling, no cost.
+        Diag.onHealthChange = { ok -> main.post { badge?.text = badgeLabel(ok) } }
+    }
+
+    private fun badgeLabel(ok: Boolean) = android.text.SpannableString("●  dualsub").apply {
+        setSpan(android.text.style.ForegroundColorSpan(if (ok) BADGE_OK else BADGE_ERROR), 0, 1, 0)
     }
 
     /** Show [text] with its bottom edge [bottomPx] pixels above the screen's bottom. */
@@ -110,6 +113,7 @@ class Overlay(private val context: Context) {
     fun detach() = main.post {
         main.removeCallbacks(hideRunnable)
         view?.let { runCatching { wm.removeView(it) } }
+        Diag.onHealthChange = null
         badge?.let { runCatching { wm.removeView(it) } }
         view = null
         badge = null
@@ -121,5 +125,7 @@ class Overlay(private val context: Context) {
         const val DEFAULT_BOTTOM_PX = 230
         const val BADGE_PX = 20f
         const val BADGE_ALPHA = 0.55f
+        val BADGE_OK = Color.rgb(0x5C, 0xD6, 0x7A)
+        val BADGE_ERROR = Color.rgb(0xFF, 0x52, 0x52)
     }
 }

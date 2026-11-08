@@ -11,9 +11,9 @@ android {
         applicationId = "de.dualsub.overlay"
         minSdk = 30          // the TV runs Android 11
         targetSdk = 30
-        versionName = "0.3"
+        versionName = "0.4"
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
-        versionCode = 4
+        versionCode = 5
     }
 
     buildTypes {

@@ -66,7 +66,16 @@ adb shell 'run-as de.dualsub.overlay mkdir -p files;
 ## Use
 
 Open **DualSub Overlay** and press **Turn on** — it returns to whatever was
-playing. Open it again to turn it off. From adb:
+playing. Open it again to turn it off.
+
+The same screen is the place to look when something seems wrong: a status line
+(lines translated, typical delay, unclear reads skipped, DeepL usage this
+month), the last error in red, and the last 24 events newest first, each
+translated line with its timings. Events are kept in `files/events.log`, so
+they survive a crash. While it runs, the `● dualsub` dot in the top-left is
+green, and turns red on an error until the next line translates.
+
+From adb:
 
 ```
 adb shell am start -n de.dualsub.overlay/.StartActivity --es action start

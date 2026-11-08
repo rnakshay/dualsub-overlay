@@ -3,11 +3,11 @@ package de.dualsub.overlay
 import android.app.Activity
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.Typeface
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.widget.Button
@@ -15,7 +15,9 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
- * The app's one screen: a remote-friendly on/off toggle.
+ * The app's one screen: a remote-friendly on/off toggle, plus what the app has
+ * been doing -- the recent events, newest first, and a status line -- so a
+ * problem can be seen on the TV without a laptop and adb.
  *
  * Turning it on returns straight to whatever was playing. From adb:
  *   am start -n de.dualsub.overlay/.StartActivity --es action start|stop
@@ -25,11 +27,21 @@ import android.widget.TextView
 class StartActivity : Activity() {
 
     private lateinit var status: TextView
+    private lateinit var stats: TextView
+    private lateinit var error: TextView
+    private lateinit var events: TextView
     private lateinit var toggle: Button
     private val main = Handler(Looper.getMainLooper())
+    private val ticker = object : Runnable {
+        override fun run() {
+            refresh()
+            main.postDelayed(this, 1000)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Diag.init(this)
         when (intent.getStringExtra("action")) {
             "stop" -> { stop(); finish(); return }
             "bench" -> {
@@ -42,53 +54,82 @@ class StartActivity : Activity() {
             "start" -> { if (!CaptureService.running) requestCapture() else finish(); return }
         }
         setContentView(layout())
-        refresh()
+        toggle.requestFocus()
+        // Show this month's DeepL usage even while the overlay is off.
+        if (Diag.deeplUsage.isEmpty()) {
+            Thread { Translator(filesDir).warmUp() }.start()
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        if (::status.isInitialized) refresh()
+        if (::status.isInitialized) main.post(ticker)
+    }
+
+    override fun onPause() {
+        main.removeCallbacks(ticker)
+        super.onPause()
     }
 
     private fun layout() = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        gravity = Gravity.CENTER
+        orientation = LinearLayout.HORIZONTAL
         setBackgroundColor(Color.rgb(0x12, 0x12, 0x14))
-        addView(TextView(context).apply {
-            text = "DualSub"
-            setTextColor(Overlay.COLOUR)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 34f)
-            gravity = Gravity.CENTER
-        })
-        addView(TextView(context).apply {
-            text = "English under any app's German subtitles"
-            setTextColor(Color.rgb(0x9A, 0x9A, 0xA0))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            gravity = Gravity.CENTER
-            setPadding(0, 8, 0, 40)
-        })
-        status = TextView(context).apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 24)
-        }
-        addView(status)
-        toggle = Button(context).apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-            minWidth = 360
-            setOnClickListener { onToggle() }
-        }
-        addView(toggle, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { gravity = Gravity.CENTER_HORIZONTAL })
+        setPadding(dp(48), dp(40), dp(48), dp(32))
+
+        // Left: name, state, the toggle.
+        addView(LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(text("DualSub", 34f, Overlay.COLOUR))
+            addView(text("English under any app's German subtitles", 13f, GREY).apply {
+                setPadding(0, dp(4), 0, dp(28))
+            })
+            status = text("", 18f, GREY).apply { setPadding(0, 0, 0, dp(16)) }
+            addView(status)
+            toggle = Button(context).apply {
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+                minWidth = dp(180)
+                setOnClickListener { onToggle() }
+            }
+            addView(toggle)
+        }, LinearLayout.LayoutParams(dp(300), LinearLayout.LayoutParams.MATCH_PARENT))
+
+        // Right: status line, last error, recent events.
+        addView(LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(32), 0, 0, 0)
+            stats = text("", 13f, LIGHT).apply { setPadding(0, 0, 0, dp(6)) }
+            addView(stats)
+            error = text("", 13f, RED).apply { setPadding(0, 0, 0, dp(6)) }
+            addView(error)
+            addView(text("Recent events, newest first", 11f, GREY).apply {
+                setPadding(0, dp(6), 0, dp(4))
+            })
+            events = text("", 11f, LIGHT).apply {
+                typeface = Typeface.MONOSPACE
+                setLineSpacing(0f, 1.1f)
+            }
+            addView(events)
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
     }
 
     private fun refresh() {
         val on = CaptureService.running
         status.text = if (on) "● Active" else "Off"
-        status.setTextColor(if (on) Overlay.COLOUR else Color.rgb(0x9A, 0x9A, 0xA0))
+        status.setTextColor(if (on) Overlay.COLOUR else GREY)
         toggle.text = if (on) "Turn off" else "Turn on"
-        toggle.requestFocus()
+
+        val parts = ArrayList<String>()
+        if (on || Diag.translated > 0) {
+            parts += "${Diag.translated} ${if (Diag.translated == 1) "line" else "lines"} translated"
+            Diag.medianDelayMs()?.let { parts += "typical delay %.1f s".format(it / 1000.0) }
+            if (Diag.skipped > 0) parts += "${Diag.skipped} unclear ${if (Diag.skipped == 1) "read" else "reads"} skipped"
+        }
+        if (Diag.deeplUsage.isNotEmpty()) parts += "DeepL ${Diag.deeplUsage} this month"
+        stats.text = parts.joinToString("  ·  ")
+        error.text = Diag.lastError.let { if (it.isEmpty()) "" else "Last error: $it" }
+        events.text = Diag.recent(EVENT_LINES).joinToString("\n")
+            .ifEmpty { "Nothing yet. Turn it on and play something with German subtitles." }
     }
 
     private fun onToggle() {
@@ -127,12 +168,24 @@ class StartActivity : Activity() {
             startForegroundService(service)
             finish()        // back to whatever was playing
         } else {
-            Log.w(CaptureService.TAG, "screen capture refused")
+            Diag.warn("Screen capture refused")
             if (::status.isInitialized) refresh() else finish()
         }
     }
 
+    private fun text(s: String, sp: Float, colour: Int) = TextView(this).apply {
+        text = s
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
+        setTextColor(colour)
+    }
+
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
     companion object {
         private const val REQUEST = 1
+        private const val EVENT_LINES = 24
+        private val GREY = Color.rgb(0x9A, 0x9A, 0xA0)
+        private val LIGHT = Color.rgb(0xD8, 0xD8, 0xDC)
+        private val RED = Color.rgb(0xFF, 0x8A, 0x80)
     }
 }
