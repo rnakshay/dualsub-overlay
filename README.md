@@ -12,8 +12,11 @@ corner shows it is on.
 
 1. **Capture** — a MediaProjection stream of the screen. Protected video (Prime)
    comes through black, but the app's subtitles do not: ideal for OCR.
-2. **Detect** — every 150 ms a sparse sample of the bottom 30% is checked; only
-   when the near-white text in it changes is the band converted in full.
+2. **Detect** — every 200 ms a sparse sample of the bottom 30% is checked; only
+   when the near-white text in it changes is the band converted in full, and
+   only centred text is treated as a subtitle. After five rejected reads in a
+   row (menus, home screens) it checks once a second until a real subtitle
+   turns up, and a static non-subtitle is retried at most twice.
 3. **OCR** — the text's bounding box is split into lines, and the lines are read
    in parallel by two Tesseract engines (German `tessdata_fast` model).
    Low-confidence reads — fading subtitles, the player's own controls — are
@@ -26,10 +29,14 @@ corner shows it is on.
    goes. Only near-white pixels count as subtitle, so the yellow overlay is
    never read back in.
 
-Measured on a TCL Android 11 TV (Realtek, 4× Cortex-A55 @ 1.3 GHz, 32-bit):
-OCR median ~0.5 s per subtitle; the English typically appears ~1 s after the
-German. About 70 MB of RAM; CPU near idle between lines, two to three cores
-for about half a second when a new line is read.
+Measured live on Prime Video on a TCL Android 11 TV (Realtek, 4× Cortex-A55 @
+1.3 GHz, 32-bit): the English appears ~1.0 s after a one-line German subtitle
+and ~1.5 s after a two-line one. About 65 MB of RAM. While subtitles are being
+read the app averages under one core, peaking at three for about half a second
+per new line; on menus it backs off to a cheap check once a second.
+
+One engine instead of two (`--ei engines 1`) needs ~50 MB and less CPU at peak,
+but leaves two-line subtitles ~2 s behind.
 
 Why Tesseract and not ML Kit: ML Kit's OCR library dies with `SIGILL` on this
 TV's 32-bit kernel.

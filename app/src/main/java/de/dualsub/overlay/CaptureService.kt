@@ -64,6 +64,11 @@ class CaptureService : Service() {
     private var lastWasEmpty = true
     @Volatile private var generation = 0
     private var lines = 0
+    // Rejected reads in a row. Menus and home screens produce nothing but
+    // these; past JUNK_STREAK the band is checked only once a second.
+    private var junkStreak = 0
+    private var retrySig = 0L
+    private var retries = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -137,7 +142,7 @@ class CaptureService : Service() {
     private val tick = object : Runnable {
         override fun run() {
             try { poll() } catch (e: Exception) { Log.e(TAG, "poll failed", e) }
-            handler.postDelayed(this, INTERVAL_MS)
+            handler.postDelayed(this, if (junkStreak >= JUNK_STREAK) IDLE_INTERVAL_MS else INTERVAL_MS)
         }
     }
 
@@ -197,7 +202,11 @@ class CaptureService : Service() {
         }
         val tCopy = SystemClock.elapsedRealtimeNanos()
 
-        if (bright < MIN_BRIGHT) {
+        // Subtitles are centred; menu rows and channel banners mostly are not.
+        val centred = bright >= MIN_BRIGHT &&
+                kotlin.math.abs((minX + maxX) / 2 - width / 2) <= width * CENTRE_TOLERANCE
+        if (bright >= MIN_BRIGHT && !centred) junkStreak++
+        if (!centred) {
             if (!lastWasEmpty) {
                 overlay.clearAfter(LINGER_MS)
                 generation++
@@ -237,11 +246,20 @@ class CaptureService : Service() {
         if (!plausible) {
             Log.i(TAG, "skipped conf=$confidence \"${german.replace('\n', '|')}\"")
             pendingGerman = if (mostlyLetters) german else ""
-            lastSignature = 0      // look again on the next frame
-            lastQuick = 0
+            junkStreak++
+            if (sig == retrySig) retries++ else { retrySig = sig; retries = 1 }
+            // A fading subtitle reads cleanly a frame or two later, so look
+            // again -- but only twice: a static banner would otherwise be
+            // re-read every tick forever.
+            if (retries <= MAX_RETRIES) {
+                lastSignature = 0
+                lastQuick = 0
+            }
             return
         }
         pendingGerman = ""
+        junkStreak = 0
+        retries = 0
         if (german == lastGerman) {
             // Same line as before (e.g. a fade glitch in between): put it back.
             translator.cached(forTranslation(germanLines))?.let {
@@ -505,7 +523,11 @@ class CaptureService : Service() {
         @Volatile var running = false
             private set
         private const val NOTIFICATION_ID = 1
-        private const val INTERVAL_MS = 150L
+        private const val INTERVAL_MS = 200L
+        private const val IDLE_INTERVAL_MS = 1000L
+        private const val JUNK_STREAK = 5
+        private const val MAX_RETRIES = 2
+        private const val CENTRE_TOLERANCE = 0.12f  // text centre within 12% of screen centre
         private const val BAND_FROM = 0.70f     // bottom 30% of the screen
         private const val MIN_BRIGHT = 150      // fewer text pixels = no subtitle
         private const val TEXT_LUM = 170
@@ -518,7 +540,7 @@ class CaptureService : Service() {
         private const val DEFAULT_ANCHOR = 0.80f   // until seen otherwise: room for two German lines
         private const val MIN_CONFIDENCE = 88      // clean lines score 91-96, fade glitches <85
         private const val MIN_CONFIDENCE_TWICE = 75
-        private const val DEFAULT_ENGINES = 2
+        private const val DEFAULT_ENGINES = 2     // live, one engine leaves two-line subtitles ~1.7 s behind
         private const val BENCH_REPS = 6
         private const val LINE_GAP = 6             // blank rows that separate two lines
         private const val MIN_LINE_H = 14          // shorter runs are dots/accents
