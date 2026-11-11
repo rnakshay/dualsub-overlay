@@ -140,6 +140,9 @@ class CaptureService : Service() {
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, ir.surface, null, handler)
 
         handler.post {
+            // Set to English -> German: load the English model alongside the
+            // German one, so the first line does not wait for it.
+            if (Direction.mode == Direction.EN_TO_DE) ensureEnglish()
             val t = SystemClock.elapsedRealtime()
             engines = List(engineCount) { initTesseract() }
             Diag.info("OCR ready in ${SystemClock.elapsedRealtime() - t} ms")
@@ -150,7 +153,11 @@ class CaptureService : Service() {
 
     private val tick = object : Runnable {
         override fun run() {
-            try { poll() } catch (e: Exception) { Diag.error("Reading the screen failed", e) }
+            // Switched to English -> German while running: start loading now.
+            if (Direction.mode == Direction.EN_TO_DE) ensureEnglish()
+            if (!StartActivity.visible) {
+                try { poll() } catch (e: Exception) { Diag.error("Reading the screen failed", e) }
+            }
             handler.postDelayed(this, if (junkStreak >= JUNK_STREAK) IDLE_INTERVAL_MS else INTERVAL_MS)
         }
     }

@@ -65,10 +65,12 @@ class StartActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        visible = true
         if (::status.isInitialized) main.post(ticker)
     }
 
     override fun onPause() {
+        visible = false
         main.removeCallbacks(ticker)
         super.onPause()
     }
@@ -198,6 +200,9 @@ class StartActivity : Activity() {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     companion object {
+        /** This screen is up: nothing to translate, and its own text is not a subtitle. */
+        @Volatile var visible = false
+            private set
         private const val REQUEST = 1
         private const val EVENT_LINES = 24
         private val GREY = Color.rgb(0x9A, 0x9A, 0xA0)

@@ -23,7 +23,8 @@ corner shows it is on.
    previous line's — and read again with the other one only when the language
    switches. The English engines load in the background the first time an
    English line turns up (~10 s on the TV below, during which the German model
-   reads English, a little less accurately); German-only viewing never loads
+   reads English, a little less accurately) — or straight away when the
+   direction is set to *English → German*. German-only viewing never loads
    them.
    Low-confidence reads — fading subtitles, the player's own controls — are
    dropped unless two reads in a row agree.
