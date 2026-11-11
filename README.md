@@ -1,8 +1,8 @@
 # DualSub Overlay
 
-An Android TV app that puts an English translation above the German subtitles
-of **any** app — Prime Video, YouTube, anything that draws its subtitles as
-plain white text.
+An Android TV app that puts a translation above the subtitles of **any** app —
+Prime Video, ARD, Hotstar, YouTube. German subtitles get English, English ones
+get German.
 
 It reads the subtitle off the screen, translates it with DeepL, and draws the
 English in yellow just above the German. A faint `● dualsub` in the top-left
@@ -22,7 +22,12 @@ corner shows it is on.
    Low-confidence reads — fading subtitles, the player's own controls — are
    dropped unless two reads in a row agree.
 4. **Translate** — DeepL, over a kept-alive connection, with a cache for lines
-   that recur. Two speakers (`- …` / `- …`) stay on separate lines; a sentence
+   that recur. The direction is set on the app's screen: *Auto-detect* (the
+   default) tells each line's language from its words — der/die/und/ist and
+   umlauts against the/and/you/is — and a line with no clue keeps the previous
+   one's; or fixed *German → English* / *English → German*. The German OCR
+   model reads English well enough, so no second model is loaded; English
+   reads score a little lower, and get a lower confidence bar to match. Two speakers (`- …` / `- …`) stay on separate lines; a sentence
    wrapped over two lines is translated as one.
 5. **Overlay** — the English sits above the tallest German seen so far, so a
    new two-line subtitle never runs into it, and stays 2.5 s after the German

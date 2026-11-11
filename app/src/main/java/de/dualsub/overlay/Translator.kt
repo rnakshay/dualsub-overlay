@@ -13,7 +13,7 @@ import java.net.URLEncoder
  * The key is read from files/deepl_key in the app's private storage, put there
  * over `adb shell run-as` so it never travels as a command-line argument.
  */
-class Translator(filesDir: File, private val targetLang: String = "EN-GB") {
+class Translator(filesDir: File) {
 
     private val key: String? = File(filesDir, "deepl_key").takeIf { it.exists() }
         ?.readText()?.trim()?.takeIf { it.isNotEmpty() }
@@ -23,15 +23,18 @@ class Translator(filesDir: File, private val targetLang: String = "EN-GB") {
 
     val ready get() = key != null
 
-    fun cached(text: String): String? = cache.get(text)
+    fun cached(text: String, source: String): String? = cache.get("$source|$text")
 
-    /** Blocking; call off the main thread. Returns null on failure. */
-    fun translate(text: String): String? {
-        cache.get(text)?.let { return it }
+    /**
+     * [text] in [source] ("DE" or "EN") into the other language. Blocking;
+     * call off the main thread. Returns null on failure.
+     */
+    fun translate(text: String, source: String): String? {
+        cache.get("$source|$text")?.let { return it }
         val k = key ?: return null
         val host = if (k.endsWith(":fx")) "api-free.deepl.com" else "api.deepl.com"
         val body = "text=" + URLEncoder.encode(text, "UTF-8") +
-                "&source_lang=DE&target_lang=" + targetLang +
+                "&source_lang=" + source + "&target_lang=" + Direction.targetFor(source) +
                 "&preserve_formatting=1"
         val conn = URL("https://$host/v2/translate").openConnection() as HttpURLConnection
         return try {
@@ -53,7 +56,7 @@ class Translator(filesDir: File, private val targetLang: String = "EN-GB") {
             val out = JSONObject(json).getJSONArray("translations")
                 .getJSONObject(0).getString("text")
             charsSent += text.length
-            cache.put(text, out)
+            cache.put("$source|$text", out)
             out
         } catch (e: Exception) {
             Diag.error("DeepL unreachable", e)

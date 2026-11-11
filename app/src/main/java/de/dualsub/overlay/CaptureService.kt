@@ -58,7 +58,8 @@ class CaptureService : Service() {
     private var bandTop = 0
     private var lastSignature = 0L
     private var lastQuick = 0L
-    @Volatile private var lastGerman = ""
+    @Volatile private var lastGerman = ""     // the last line read, whichever language
+    private var lastSource = "DE"
     // A middling-confidence read, accepted only if the next read agrees.
     private var pendingGerman = ""
     private var lastWasEmpty = true
@@ -75,6 +76,7 @@ class CaptureService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, notification())
         Diag.init(this)
+        Direction.load(this)
         if (intent == null || projection != null) return START_NOT_STICKY
 
         scale = intent.getFloatExtra(EXTRA_SCALE, 1f).coerceIn(0.25f, 1f)
@@ -114,7 +116,7 @@ class CaptureService : Service() {
         height = (bounds.height() * scale).toInt()
         bandTop = (height * BAND_FROM).toInt()
         Diag.resetSession()
-        Diag.info("Started: capture ${width}x$height, every ${INTERVAL_MS} ms, " +
+        Diag.info("Started (${Direction.label()}): capture ${width}x$height, every ${INTERVAL_MS} ms, " +
                 "$engineCount OCR engine(s) x $omp threads")
 
         val mpm = getSystemService(MediaProjectionManager::class.java)
@@ -244,7 +246,11 @@ class CaptureService : Service() {
         // the same twice, so a middling score counts once two reads agree --
         // which rescues real lines Tesseract is merely unsure of ("'tschuldigung").
         val confirmed = confidence >= MIN_CONFIDENCE_TWICE && german == pendingGerman
-        val plausible = mostlyLetters && (confidence >= MIN_CONFIDENCE || confirmed)
+        // The model is German, so clean English reads score lower (82-86) than
+        // clean German ones (91-96). A line made of real English words gets a
+        // lower bar; garbled fade frames rarely contain any.
+        val minConfidence = if (Direction.detect(german) == "EN") MIN_CONFIDENCE_EN else MIN_CONFIDENCE
+        val plausible = mostlyLetters && (confidence >= minConfidence || confirmed)
         if (!plausible) {
             Diag.skippedRead()
             Diag.info("? skipped, ${confidence}% sure: ${german.replace("\n", " / ").take(70)}")
@@ -277,7 +283,7 @@ class CaptureService : Service() {
         retries = 0
         if (german == lastGerman) {
             // Same line as before (e.g. a fade glitch in between): put it back.
-            translator.cached(forTranslation(germanLines))?.let {
+            translator.cached(forTranslation(germanLines), lastSource)?.let {
                 overlay.show(it, englishBottom((bandTop + minY) / scale))
             }
             return
@@ -293,17 +299,20 @@ class CaptureService : Service() {
         val copyMs = ms(t0, tCopy)
         val shown = german.replace('\n', '|')
         val query = forTranslation(germanLines)
-        translator.cached(query)?.let { english ->
+        val source = Direction.sourceOf(query, lastSource)
+        lastSource = source
+        val dir = if (source == "EN") "EN→DE" else "DE→EN"
+        translator.cached(query, source)?.let { english ->
             overlay.show(english, bottomPx)
             val age = ageMs(frameNanos)
             Diag.shown(age)
-            Diag.info("#$n ${secs(age)} (cached)  ${shown.replace("|", " / ")}  →  ${english.replace('\n', ' ')}")
+            Diag.info("#$n ${secs(age)} $dir (cached)  ${shown.replace("|", " / ")}  →  ${english.replace('\n', ' ')}")
             return
         }
         if (net.isShutdown) return
         net.execute {
             val tNet = SystemClock.elapsedRealtimeNanos()
-            val english = translator.translate(query)
+            val english = translator.translate(query, source)
             val deeplMs = ms(tNet, SystemClock.elapsedRealtimeNanos())
             // A newer generation is fine if it is still the same German line.
             if (english == null || (gen != generation && german != lastGerman)) {
@@ -315,7 +324,7 @@ class CaptureService : Service() {
             overlay.show(english, bottomPx)
             val age = ageMs(frameNanos)
             Diag.shown(age)
-            Diag.info("#$n ${secs(age)} (ocr ${secs(ocrMs)}, deepl ${secs(deeplMs)})  " +
+            Diag.info("#$n ${secs(age)} $dir (ocr ${secs(ocrMs)}, deepl ${secs(deeplMs)})  " +
                     "${shown.replace("|", " / ")}  →  ${english.replace('\n', ' ')}")
         }
     }
@@ -581,6 +590,7 @@ class CaptureService : Service() {
         private const val DEFAULT_ANCHOR = 0.80f   // until seen otherwise: room for two German lines
         private const val MIN_CONFIDENCE = 88      // clean lines score 91-96, fade glitches <85
         private const val MIN_CONFIDENCE_TWICE = 75
+        private const val MIN_CONFIDENCE_EN = 80
         private const val DEFAULT_ENGINES = 2     // live, one engine leaves two-line subtitles ~1.7 s behind
         private const val BENCH_REPS = 6
         private const val LINE_GAP = 6             // blank rows that separate two lines

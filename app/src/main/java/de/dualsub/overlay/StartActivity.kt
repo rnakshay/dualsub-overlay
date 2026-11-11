@@ -31,6 +31,7 @@ class StartActivity : Activity() {
     private lateinit var error: TextView
     private lateinit var events: TextView
     private lateinit var toggle: Button
+    private lateinit var direction: Button
     private val main = Handler(Looper.getMainLooper())
     private val ticker = object : Runnable {
         override fun run() {
@@ -42,6 +43,7 @@ class StartActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Diag.init(this)
+        Direction.load(this)
         when (intent.getStringExtra("action")) {
             "stop" -> { stop(); finish(); return }
             "bench" -> {
@@ -92,6 +94,19 @@ class StartActivity : Activity() {
                 setOnClickListener { onToggle() }
             }
             addView(toggle)
+            addView(text("Subtitles", 13f, GREY).apply { setPadding(0, dp(24), 0, dp(4)) })
+            // Applies from the next line, no restart needed.
+            direction = Button(context).apply {
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                minWidth = dp(180)
+                isAllCaps = false
+                setOnClickListener {
+                    Direction.next(context)
+                    Diag.info("Subtitles: ${Direction.label()}")
+                    refresh()
+                }
+            }
+            addView(direction)
         }, LinearLayout.LayoutParams(dp(300), LinearLayout.LayoutParams.MATCH_PARENT))
 
         // Right: status line, last error, recent events.
@@ -118,6 +133,7 @@ class StartActivity : Activity() {
         status.text = if (on) "● Active" else "Off"
         status.setTextColor(if (on) Overlay.COLOUR else GREY)
         toggle.text = if (on) "Turn off" else "Turn on"
+        direction.text = Direction.label()
 
         val parts = ArrayList<String>()
         if (on || Diag.translated > 0) {
