@@ -45,6 +45,11 @@ class CaptureService : Service() {
     // One Tesseract per core in use: subtitle lines are OCR'd in parallel.
     private var ocrPool = Executors.newFixedThreadPool(DEFAULT_ENGINES)
     private var engines: List<TessBaseAPI> = emptyList()
+    // English engines, loaded in the background the first time an English line
+    // turns up, so German-only viewing never pays for them.
+    @Volatile private var enginesEn: List<TessBaseAPI> = emptyList()
+    private var englishLoading = false
+    private var engineCount = DEFAULT_ENGINES
     private lateinit var translator: Translator
     private lateinit var overlay: Overlay
 
@@ -84,7 +89,7 @@ class CaptureService : Service() {
         // four cores; the default (4 each) makes them fight.
         val omp = intent.getIntExtra(EXTRA_OMP, DEFAULT_OMP)
         if (omp > 0) android.system.Os.setenv("OMP_NUM_THREADS", omp.toString(), true)
-        val engineCount = intent.getIntExtra(EXTRA_ENGINES, DEFAULT_ENGINES).coerceIn(1, 4)
+        engineCount = intent.getIntExtra(EXTRA_ENGINES, DEFAULT_ENGINES).coerceIn(1, 4)
         ocrPool.shutdown()
         ocrPool = Executors.newFixedThreadPool(engineCount)
 
@@ -231,7 +236,33 @@ class CaptureService : Service() {
         generation++
 
         if (engines.isEmpty()) return
-        val results = ocrLines(pixels, width, bandH, minX, maxX, textLines(rowText, minY, maxY))
+        val rows = textLines(rowText, minY, maxY)
+        // Read with the model for the language expected: the fixed direction, or
+        // in Auto the previous line's. Only when the read says otherwise is it
+        // read again with the other model -- once per switch, not per line.
+        val wantEnglish = when (Direction.mode) {
+            Direction.EN_TO_DE -> true
+            Direction.DE_TO_EN -> false
+            else -> lastSource == "EN"
+        }
+        if (wantEnglish) ensureEnglish()
+        var english = wantEnglish && enginesEn.isNotEmpty()
+        var results = ocrLines(pixels, width, bandH, minX, maxX, rows, if (english) enginesEn else engines)
+        if (Direction.mode == Direction.AUTO) {
+            when (Direction.detect(results.joinToString(" ") { it.first })) {
+                "EN" -> if (!english) {
+                    ensureEnglish()
+                    if (enginesEn.isNotEmpty()) {
+                        results = ocrLines(pixels, width, bandH, minX, maxX, rows, enginesEn)
+                        english = true
+                    }
+                }
+                "DE" -> if (english) {
+                    results = ocrLines(pixels, width, bandH, minX, maxX, rows, engines)
+                    english = false
+                }
+            }
+        }
         val confidence = results.filter { it.first.isNotEmpty() }.minOfOrNull { it.second } ?: 0
         val tOcr = SystemClock.elapsedRealtimeNanos()
 
@@ -246,9 +277,9 @@ class CaptureService : Service() {
         // the same twice, so a middling score counts once two reads agree --
         // which rescues real lines Tesseract is merely unsure of ("'tschuldigung").
         val confirmed = confidence >= MIN_CONFIDENCE_TWICE && german == pendingGerman
-        // The model is German, so clean English reads score lower (82-86) than
-        // clean German ones (91-96). A line made of real English words gets a
-        // lower bar; garbled fade frames rarely contain any.
+        // English reads score lower than German ones (82-86 through the German
+        // model, before the English one has loaded). A line made of real
+        // English words gets a lower bar; garbled fade frames rarely contain any.
         val minConfidence = if (Direction.detect(german) == "EN") MIN_CONFIDENCE_EN else MIN_CONFIDENCE
         val plausible = mostlyLetters && (confidence >= minConfidence || confirmed)
         if (!plausible) {
@@ -329,9 +360,33 @@ class CaptureService : Service() {
         }
     }
 
+    /** Start loading the English engines, once, off the OCR thread. */
+    private fun ensureEnglish() {
+        if (enginesEn.isNotEmpty() || englishLoading) return
+        englishLoading = true
+        Thread {
+            val t = SystemClock.elapsedRealtime()
+            val loaded = try {
+                List(engineCount) { initTesseract("eng") }
+            } catch (e: Exception) {
+                Diag.error("English OCR failed to load", e); emptyList()
+            }
+            handler.post {
+                if (running) {
+                    enginesEn = loaded
+                    if (loaded.isNotEmpty()) Diag.info("English OCR ready in ${SystemClock.elapsedRealtime() - t} ms")
+                } else {
+                    loaded.forEach { it.recycle() }
+                }
+                englishLoading = false
+            }
+        }.start()
+    }
+
     /** OCR each subtitle line, spread over the engines in parallel. */
     private fun ocrLines(pixels: IntArray, width: Int, bandH: Int, minX: Int, maxX: Int,
-                         rows: List<IntRange>): List<Pair<String, Int>> {
+                         rows: List<IntRange>,
+                         engines: List<TessBaseAPI> = this.engines): List<Pair<String, Int>> {
         val pad = (12 * width / 1920).coerceAtLeast(4)
         val x0 = (minX - pad).coerceAtLeast(0)
         val boxW = (maxX + pad).coerceAtMost(width - 1) - x0 + 1
@@ -495,16 +550,16 @@ class CaptureService : Service() {
 
     private fun ageMs(frameNanos: Long) = (System.nanoTime() - frameNanos) / 1_000_000
 
-    private fun initTesseract(): TessBaseAPI {
+    private fun initTesseract(lang: String = "deu"): TessBaseAPI {
         val dir = File(filesDir, "tessdata").apply { mkdirs() }
-        val model = File(dir, "deu.traineddata")
+        val model = File(dir, "$lang.traineddata")
         if (!model.exists()) {
-            assets.open("tessdata/deu.traineddata").use { input ->
+            assets.open("tessdata/$lang.traineddata").use { input ->
                 model.outputStream().use { input.copyTo(it) }
             }
         }
         return TessBaseAPI().apply {
-            if (!init(filesDir.absolutePath, "deu", TessBaseAPI.OEM_LSTM_ONLY)) {
+            if (!init(filesDir.absolutePath, lang, TessBaseAPI.OEM_LSTM_ONLY)) {
                 throw IllegalStateException("tesseract init failed")
             }
             pageSegMode = TessBaseAPI.PageSegMode.PSM_SINGLE_LINE
@@ -538,6 +593,8 @@ class CaptureService : Service() {
                 ocrPool.awaitTermination(3, TimeUnit.SECONDS)
                 engines.forEach { it.recycle() }
                 engines = emptyList()
+                enginesEn.forEach { it.recycle() }
+                enginesEn = emptyList()
                 val chars = if (::translator.isInitialized) translator.charsSent else 0
                 running = false
                 Diag.info("Stopped after $lines lines, $chars characters sent to DeepL")

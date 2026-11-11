@@ -18,16 +18,20 @@ corner shows it is on.
    row (menus, home screens) it checks once a second until the subtitle area
    is clear again, and a static non-subtitle is retried at most twice.
 3. **OCR** — the text's bounding box is split into lines, and the lines are read
-   in parallel by two Tesseract engines (German `tessdata_fast` model).
+   in parallel by two Tesseract engines (`tessdata_fast` models). Each line is
+   read with the model for the expected language — the fixed direction, or the
+   previous line's — and read again with the other one only when the language
+   switches. The English engines load in the background the first time an
+   English line turns up (~10 s on the TV below, during which the German model
+   reads English, a little less accurately); German-only viewing never loads
+   them.
    Low-confidence reads — fading subtitles, the player's own controls — are
    dropped unless two reads in a row agree.
 4. **Translate** — DeepL, over a kept-alive connection, with a cache for lines
    that recur. The direction is set on the app's screen: *Auto-detect* (the
    default) tells each line's language from its words — der/die/und/ist and
    umlauts against the/and/you/is — and a line with no clue keeps the previous
-   one's; or fixed *German → English* / *English → German*. The German OCR
-   model reads English well enough, so no second model is loaded; English
-   reads score a little lower, and get a lower confidence bar to match. Two speakers (`- …` / `- …`) stay on separate lines; a sentence
+   one's; or fixed *German → English* / *English → German*. Two speakers (`- …` / `- …`) stay on separate lines; a sentence
    wrapped over two lines is translated as one.
 5. **Overlay** — the English sits above the tallest German seen so far, so a
    new two-line subtitle never runs into it, and stays 2.5 s after the German
@@ -107,7 +111,7 @@ twice as slow.
 
 ## Credits
 
-German OCR model: `deu.traineddata` from
+OCR models: `deu.traineddata` and `eng.traineddata` from
 [tesseract-ocr/tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast)
 (Apache 2.0). OCR via
 [Tesseract4Android](https://github.com/adaptech-cz/Tesseract4Android).
