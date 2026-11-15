@@ -2,118 +2,100 @@
 
 <img src="docs/banner.png" width="320" alt="DualSub">
 
-An Android TV app that puts a translation above the subtitles of **any** app —
-Prime Video, ARD, Hotstar, YouTube. German subtitles get English, English ones
-get German.
-
-It reads the subtitle off the screen, translates it with DeepL, and draws the
-translation in yellow just above the original:
-
-![German subtitle, English above it](docs/example-de-en.png)
-
-![Two speakers, each line translated](docs/example-dialogue.png)
-
-![English subtitle, German above it](docs/example-en-de.png)
-
-*Illustrations, drawn in the overlay's own colours and sizes. Real captures
-from the TV are [below](#on-the-tv).*
-
-A faint dot in the top-left corner shows it is on — green while working, red
-after an error:
-
-![The corner indicator](docs/badge.png)
-
-## On the TV
-
-Captured on the TV with Prime Video playing. Prime's video is protected and
-captures black; on the screen the picture is behind the text.
+**Live translated subtitles on top of any Android TV app.** It reads the
+subtitle off the screen, translates it, and shows the translation just above
+the original — German → English, or English → German.
 
 ![A Prime Video subtitle with its English translation above it](docs/prime-one-line.png)
 
 ![A two-line subtitle; the translation wraps above it](docs/prime-two-lines.png)
 
+<sub>Captured on the TV with Prime Video playing. Prime's video is protected and
+captures black; on the screen the picture is behind the text.</sub>
+
+## Features
+
+- **Works with any app** — Prime Video, ARD, Hotstar, YouTube. No integration,
+  no plugin: if a subtitle is on screen, it gets translated.
+- **Both directions, detected per line** — German gets English, English gets
+  German. Or fix the direction on the app's screen.
+- **Reads real-world subtitles** — two-speaker dialogue (`- … / - …`), sound
+  descriptions (`[sie lacht]` → `[she laughs]`), and the coloured,
+  teletext-style subtitles German broadcasters use.
+- **About a second behind** the original, on a budget 32-bit TV chip.
+- **Light on the TV** — idles between lines, backs off on menus, ~65 MB of RAM.
+- **Tells you what it's doing** — a faint corner dot (green / red on error) and
+  an event log on the app's screen; `~` marks a line it couldn't read.
+- **Private by design** — OCR runs on the TV; only the subtitle text goes to the
+  translator.
+
 ## How it works
 
-1. **Capture** — a MediaProjection stream of the screen. Protected video (Prime)
-   comes through black, but the app's subtitles do not: ideal for OCR.
-2. **Detect** — every 200 ms a sparse sample of the bottom 30% is checked; only
-   when the subtitle-coloured text in it changes is the band converted in full, and
-   only centred text is treated as a subtitle. After five rejected reads in a
-   row (menus, home screens) it checks once a second until the subtitle area
-   is clear again, and a static non-subtitle is retried at most twice.
-3. **OCR** — the text's bounding box is split into lines, and the lines are read
-   in parallel by two Tesseract engines (`tessdata_fast` models). Each line is
-   read with the model for the expected language — the fixed direction, or the
-   previous line's — and read again with the other one only when the language
-   switches. The English engines load in the background the first time an
-   English line turns up (~10 s on the TV below, during which the German model
-   reads English, a little less accurately) — or straight away when the
-   direction is set to *English → German*. German-only viewing never loads
-   them.
-   Low-confidence reads — fading subtitles, the player's own controls — are
-   dropped unless two reads in a row agree.
-4. **Translate** — DeepL, over a kept-alive connection, with a cache for lines
-   that recur. The direction is set on the app's screen: *Auto-detect* (the
-   default) tells each line's language from its words — der/die/und/ist and
-   umlauts against the/and/you/is — and a line with no clue keeps the previous
-   one's; or fixed *German → English* / *English → German*. Two speakers (`- …` / `- …`) stay on separate lines; a sentence
-   wrapped over two lines is translated as one.
-5. **Overlay** — the English sits above the tallest German seen so far, so a
-   new two-line subtitle never runs into it, and stays 2.5 s after the German
-   goes. A new line that cannot be read with confidence shows `~` instead.
-   Only pure-colour pixels count as subtitle (white, and the teletext colours
-   ARD uses for speakers), so the overlay's half-blue yellow is never read
-   back in.
+```
+ screen ──► change check ──► OCR ──► language ──► DeepL ──► overlay
+ capture    (200 ms, cheap)  (Tesseract,  (DE or EN)          (above the
+                              on device)                       subtitle)
+```
+
+| Problem | Solution |
+| --- | --- |
+| No app exposes its subtitle text to other apps | Capture the screen and OCR the subtitle band. Protected video captures black, which leaves clean text on black — ideal for OCR. |
+| Google's ML Kit OCR crashes (`SIGILL`) on the TV's 32-bit kernel | Tesseract, with German and English models; English loads only when needed. |
+| OCR too slow on a 4-core 1.3 GHz chip | Read only the text's bounding box, one line per engine in parallel; 2 engines × 2 threads halved OCR time (4 threads each was fighting over the cores). |
+| The overlay would read its own translation back in | Subtitles use pure colours (each channel fully on or off); the overlay's yellow has blue at half, so it never counts as text. |
+| Menus and home screens burned CPU | Only centred text counts as a subtitle; after repeated misses it checks once a second until the subtitle area is clear. |
+| Fading subtitles and player controls produce junk | Confidence threshold, a second read must agree for borderline lines, and a letters-vs-symbols check. |
+| Some ARD uploads are sped up, subtitles drift | Handled in the sibling Kodi addon, `mediathek-dualsub`. |
+
+## Performance
 
 Measured live on Prime Video on a TCL Android 11 TV (Realtek, 4× Cortex-A55 @
-1.3 GHz, 32-bit): the English appears ~1.0 s after a one-line German subtitle
-and ~1.5 s after a two-line one. About 65 MB of RAM. While subtitles are being
-read the app averages under one core, peaking at three for about half a second
-per new line; on menus it backs off to a cheap check once a second.
+1.3 GHz, 32-bit, 2 GB RAM):
 
-One engine instead of two (`--ei engines 1`) needs ~50 MB and less CPU at peak,
-but leaves two-line subtitles ~2 s behind.
+| | |
+| --- | --- |
+| Translation shown after a one-line subtitle | ~1.0 s |
+| … after a two-line subtitle | ~1.5 s |
+| OCR per subtitle (median) | ~0.5 s |
+| Memory | ~65 MB (+10 MB once English OCR loads) |
+| CPU while subtitles change | under one core on average, up to three for ~0.5 s per new line |
+| CPU on menus | a cheap check once a second |
 
-Why Tesseract and not ML Kit: ML Kit's OCR library dies with `SIGILL` on this
-TV's 32-bit kernel.
+## Use
 
-## Build and install
+Open **DualSub Overlay**, press **Turn on** — it returns to whatever was
+playing. Open it again to turn it off, change direction (*Auto-detect*,
+*German → English*, *English → German*), or see what it has been doing:
+
+![The event list on the app's screen](docs/event-log.png)
+
+While it runs, a faint dot sits in the top-left corner — green while working,
+red after an error until the next line translates:
+
+![The corner indicator](docs/badge.png)
+
+## Setup
 
 ```
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 
-# skip the screen-capture consent dialog and allow drawing over other apps
+# allow screen capture without a prompt, and drawing over other apps
 adb shell appops set de.dualsub.overlay PROJECT_MEDIA allow
 adb shell appops set de.dualsub.overlay SYSTEM_ALERT_WINDOW allow
 ```
 
-The DeepL key lives in the app's private storage, `files/deepl_key`. Put it
-there without it ever appearing as a command-line argument, e.g. from a file
-already on the TV:
+A [DeepL API](https://www.deepl.com/pro-api) key (the free tier is plenty) goes
+in the app's private storage, `files/deepl_key` — copied from a file on the TV
+so it never appears as a command-line argument:
 
 ```
 adb shell 'run-as de.dualsub.overlay mkdir -p files;
            cat /path/on/tv/key.txt | run-as de.dualsub.overlay sh -c "cat > files/deepl_key"'
 ```
 
-(`run-as` works because this is a debug build.)
-
-## Use
-
-Open **DualSub Overlay** and press **Turn on** — it returns to whatever was
-playing. Open it again to turn it off.
-
-The same screen is the place to look when something seems wrong: a status line
-(lines translated, typical delay, unclear reads skipped, DeepL usage this
-month), the last error in red, and the last 24 events newest first, each
-translated line with its timings. Events are kept in `files/events.log`, so
-they survive a crash. While it runs, the `● dualsub` dot in the top-left is
-green, and turns red on an error until the next line translates.
-
-![The event list on the app's screen](docs/event-log.png)
-
-From adb:
+<details>
+<summary>adb commands, logs and the OCR benchmark</summary>
 
 ```
 adb shell am start -n de.dualsub.overlay/.StartActivity --es action start
@@ -121,10 +103,8 @@ adb shell am start -n de.dualsub.overlay/.StartActivity --es action stop
 adb logcat -s DualSubOcr          # every line, with its timings
 ```
 
-## Benchmark
-
-Same OCR as live, on saved screenshots in `files/bench/*.png`, so settings can
-be compared on identical input:
+The benchmark runs the live OCR on saved screenshots in `files/bench/*.png`, so
+settings can be compared on identical input:
 
 ```
 adb shell am start -n de.dualsub.overlay/.StartActivity \
@@ -132,13 +112,29 @@ adb shell am start -n de.dualsub.overlay/.StartActivity \
 adb logcat -s DualSubOcr | grep BENCH
 ```
 
-`omp` is OpenMP threads per engine. 2 engines × 2 threads (the default) was
-fastest on the TV above; 4 threads per engine, the library default, was nearly
-twice as slow.
+`omp` is OpenMP threads per engine. One engine (`--ei engines 1`) saves ~15 MB
+and peak CPU but leaves two-line subtitles ~2 s behind.
+
+</details>
+
+## Next steps
+
+- **Any language pair** — Tesseract has ~100 languages and DeepL ~30; download
+  the two OCR models a user picks, and let the translator detect each line's
+  language.
+- **No API key** — Google ML Kit's on-device translation is free and offline
+  (~59 languages). Its OCR crashes on this TV, so the translator needs testing
+  on 32-bit devices first; DeepL would stay as the higher-quality option.
+- **Phone and tablet version** — the same pipeline, where the overlay
+  permission is a normal settings toggle; a far larger audience than TV.
+- **Play Store** — needs the overlay permission to be grantable without adb
+  (many TV builds hide it), a privacy policy, and the current target SDK.
+- **Learning mode** — keep the lines you've seen with their translations and
+  export them as flashcards (e.g. Anki).
 
 ## Credits
 
-OCR models: `deu.traineddata` and `eng.traineddata` from
+OCR models `deu` and `eng` from
 [tesseract-ocr/tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast)
 (Apache 2.0). OCR via
 [Tesseract4Android](https://github.com/adaptech-cz/Tesseract4Android).
