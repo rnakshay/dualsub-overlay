@@ -1,12 +1,25 @@
 # DualSub Overlay
 
+<img src="docs/banner.png" width="320" alt="DualSub">
+
 An Android TV app that puts a translation above the subtitles of **any** app —
 Prime Video, ARD, Hotstar, YouTube. German subtitles get English, English ones
 get German.
 
 It reads the subtitle off the screen, translates it with DeepL, and draws the
-English in yellow just above the German. A faint `● dualsub` in the top-left
-corner shows it is on.
+translation in yellow just above the original:
+
+![A Prime Video subtitle with its English translation above it](docs/prime-one-line.png)
+
+![A two-line subtitle; the translation wraps above it](docs/prime-two-lines.png)
+
+*Captured on the TV. Prime's video is protected and captures black — on the
+screen the picture is behind the text.*
+
+A faint dot in the top-left corner shows it is on — green while working, red
+after an error:
+
+![The corner indicator](docs/badge.png)
 
 ## How it works
 
@@ -86,6 +99,8 @@ month), the last error in red, and the last 24 events newest first, each
 translated line with its timings. Events are kept in `files/events.log`, so
 they survive a crash. While it runs, the `● dualsub` dot in the top-left is
 green, and turns red on an error until the next line translates.
+
+![The event list on the app's screen](docs/event-log.png)
 
 From adb:
 
