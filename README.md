@@ -9,24 +9,35 @@ get German.
 It reads the subtitle off the screen, translates it with DeepL, and draws the
 translation in yellow just above the original:
 
-![A Prime Video subtitle with its English translation above it](docs/prime-one-line.png)
+![German subtitle, English above it](docs/example-de-en.png)
 
-![A two-line subtitle; the translation wraps above it](docs/prime-two-lines.png)
+![Two speakers, each line translated](docs/example-dialogue.png)
 
-*Captured on the TV. Prime's video is protected and captures black — on the
-screen the picture is behind the text.*
+![English subtitle, German above it](docs/example-en-de.png)
+
+*Illustrations, drawn in the overlay's own colours and sizes. Real captures
+from the TV are [below](#on-the-tv).*
 
 A faint dot in the top-left corner shows it is on — green while working, red
 after an error:
 
 ![The corner indicator](docs/badge.png)
 
+## On the TV
+
+Captured on the TV with Prime Video playing. Prime's video is protected and
+captures black; on the screen the picture is behind the text.
+
+![A Prime Video subtitle with its English translation above it](docs/prime-one-line.png)
+
+![A two-line subtitle; the translation wraps above it](docs/prime-two-lines.png)
+
 ## How it works
 
 1. **Capture** — a MediaProjection stream of the screen. Protected video (Prime)
    comes through black, but the app's subtitles do not: ideal for OCR.
 2. **Detect** — every 200 ms a sparse sample of the bottom 30% is checked; only
-   when the near-white text in it changes is the band converted in full, and
+   when the subtitle-coloured text in it changes is the band converted in full, and
    only centred text is treated as a subtitle. After five rejected reads in a
    row (menus, home screens) it checks once a second until the subtitle area
    is clear again, and a static non-subtitle is retried at most twice.
