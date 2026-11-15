@@ -132,9 +132,12 @@ and peak CPU but leaves two-line subtitles ~2 s behind.
 - **Learning mode** — keep the lines you've seen with their translations and
   export them as flashcards (e.g. Anki).
 
-## Credits
+## Credits and licence
 
 OCR models `deu` and `eng` from
 [tesseract-ocr/tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast)
 (Apache 2.0). OCR via
 [Tesseract4Android](https://github.com/adaptech-cz/Tesseract4Android).
+
+The code is MIT licensed (`LICENSE`); bundled third-party parts keep their own
+licences, listed in `THIRD_PARTY_NOTICES.md`.
