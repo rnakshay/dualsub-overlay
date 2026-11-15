@@ -76,23 +76,41 @@ red after an error until the next line translates:
 
 ## Setup
 
+You need an Android TV with **adb** enabled (Settings → Device preferences →
+About → press *Build* 7 times, then Developer options → USB / network
+debugging), and a computer with the Android SDK.
+
+**1. Build and install**
+
 ```
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
 
-# allow screen capture without a prompt, and drawing over other apps
+**2. Grant the two permissions** — screen capture without a prompt, and drawing
+over other apps:
+
+```
 adb shell appops set de.dualsub.overlay PROJECT_MEDIA allow
 adb shell appops set de.dualsub.overlay SYSTEM_ALERT_WINDOW allow
 ```
 
-A [DeepL API](https://www.deepl.com/pro-api) key (the free tier is plenty) goes
-in the app's private storage, `files/deepl_key` — copied from a file on the TV
-so it never appears as a command-line argument:
+**3. Add a DeepL key.** Sign up for the free
+[DeepL API](https://www.deepl.com/pro-api) plan (500,000 characters a month —
+roughly ten hours of TV) and copy the key from your account; free keys end in
+`:fx`. Then:
 
 ```
-adb shell 'run-as de.dualsub.overlay mkdir -p files;
-           cat /path/on/tv/key.txt | run-as de.dualsub.overlay sh -c "cat > files/deepl_key"'
+./set-key.sh          # paste the key at the prompt; nothing is echoed
 ```
+
+The script pipes the key over adb straight into the app's private storage — it
+is never written to a file or passed as a command-line argument. `--show`
+prints what the TV has, masked; `--file` and `--stdin` read the key from a file
+or a password manager. With the TV on the network instead of USB, prefix it
+with `TV_ADDR=192.168.0.50:5555`.
+
+**4. Turn it on** from the **DualSub Overlay** app on the TV.
 
 <details>
 <summary>adb commands, logs and the OCR benchmark</summary>
