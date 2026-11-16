@@ -66,15 +66,16 @@ Measured live on Prime Video on a TCL Android 11 TV (Realtek, 4× Cortex-A55 @
 
 Open **DualSub Overlay**, press **Turn on** — it returns to whatever was
 playing. Open it again to turn it off, change direction (*Auto-detect*,
-*German → English*, *English → German*), or switch **Start after reboot** on
-so it comes back by itself when the TV restarts:
+*German → English*, *English → German*), switch **Start after reboot** on so
+it comes back by itself when the TV restarts, or see what it has been doing —
+newest first; press → on the remote to scroll back through it:
 
-<img src="docs/controls.png" width="320" alt="The app's buttons: Turn off, the subtitle direction, Start after reboot">
-
-Beside the buttons is what it has been doing, newest first; press → on the
-remote to scroll back through it:
-
-![The event list on the app's screen](docs/event-log.png)
+<table>
+<tr>
+<td valign="top"><img src="docs/controls.png" width="240" alt="The app's buttons: Turn off, the subtitle direction, Start after reboot"></td>
+<td valign="top"><img src="docs/event-log.png" width="560" alt="The event list on the app's screen"></td>
+</tr>
+</table>
 
 While it runs, a faint dot sits in the top-left corner — green while working,
 red after an error until the next line translates:
