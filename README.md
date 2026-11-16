@@ -8,10 +8,11 @@ the original — German → English, or English → German.
 
 ![A Prime Video subtitle with its English translation above it](docs/prime-one-line.png)
 
-![A two-line subtitle; the translation wraps above it](docs/prime-two-lines.png)
+![An English two-line subtitle with its German translation above it](docs/en-to-de.png)
 
-<sub>Captured on the TV with Prime Video playing. Prime's video is protected and
-captures black; on the screen the picture is behind the text.</sub>
+<sub>Captured on the TV: Prime Video above, an English test still in VLC below.
+Prime's video is protected and captures black; on the screen the picture is
+behind the text.</sub>
 
 ## Features
 
@@ -65,7 +66,8 @@ Measured live on Prime Video on a TCL Android 11 TV (Realtek, 4× Cortex-A55 @
 
 Open **DualSub Overlay**, press **Turn on** — it returns to whatever was
 playing. Open it again to turn it off, change direction (*Auto-detect*,
-*German → English*, *English → German*), or see what it has been doing:
+*German → English*, *English → German*), switch **Start after reboot** on so
+it comes back by itself when the TV restarts, or see what it has been doing:
 
 ![The event list on the app's screen](docs/event-log.png)
 

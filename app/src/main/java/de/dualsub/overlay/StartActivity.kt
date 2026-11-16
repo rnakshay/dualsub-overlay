@@ -10,8 +10,10 @@ import android.os.Handler
 import android.os.Looper
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.KeyEvent
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 
 /**
@@ -30,8 +32,10 @@ class StartActivity : Activity() {
     private lateinit var stats: TextView
     private lateinit var error: TextView
     private lateinit var events: TextView
+    private lateinit var eventScroll: ScrollView
     private lateinit var toggle: Button
     private lateinit var direction: Button
+    private lateinit var autostart: Button
     private val main = Handler(Looper.getMainLooper())
     private val ticker = object : Runnable {
         override fun run() {
@@ -109,6 +113,18 @@ class StartActivity : Activity() {
                 }
             }
             addView(direction)
+            addView(text("Start after reboot", 13f, GREY).apply { setPadding(0, dp(24), 0, dp(4)) })
+            autostart = Button(context).apply {
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                minWidth = dp(180)
+                isAllCaps = false
+                setOnClickListener {
+                    Autostart.toggle(context)
+                    Diag.info("Start after reboot: ${Autostart.label(context)}")
+                    refresh()
+                }
+            }
+            addView(autostart)
         }, LinearLayout.LayoutParams(dp(300), LinearLayout.LayoutParams.MATCH_PARENT))
 
         // Right: status line, last error, recent events.
@@ -119,14 +135,43 @@ class StartActivity : Activity() {
             addView(stats)
             error = text("", 13f, RED).apply { setPadding(0, 0, 0, dp(6)) }
             addView(error)
-            addView(text("Recent events, newest first", 11f, GREY).apply {
+            addView(text("Recent events, newest first  ·  press → to scroll", 11f, GREY).apply {
                 setPadding(0, dp(6), 0, dp(4))
             })
             events = text("", 11f, LIGHT).apply {
                 typeface = Typeface.MONOSPACE
                 setLineSpacing(0f, 1.1f)
+                setPadding(dp(6), dp(4), dp(6), dp(4))
             }
-            addView(events)
+            eventScroll = ScrollView(context).apply {
+                addView(events)
+                // Reached with the remote's right key; up/down scroll a few
+                // lines at a time, left goes back to the buttons.
+                isFocusable = true
+                isVerticalScrollBarEnabled = true
+                setOnFocusChangeListener { _, has ->
+                    setBackgroundColor(if (has) FOCUSED else Color.TRANSPARENT)
+                    if (!has) { scrollTo(0, 0); refresh() }
+                }
+                setOnKeyListener { _, code, ev ->
+                    val step = events.lineHeight * SCROLL_LINES
+                    when (code) {
+                        KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
+                            if (ev.action == KeyEvent.ACTION_DOWN)
+                                smoothScrollBy(0, if (code == KeyEvent.KEYCODE_DPAD_UP) -step else step)
+                            true
+                        }
+                        KeyEvent.KEYCODE_PAGE_UP, KeyEvent.KEYCODE_PAGE_DOWN -> {
+                            if (ev.action == KeyEvent.ACTION_DOWN)
+                                pageScroll(if (code == KeyEvent.KEYCODE_PAGE_UP) android.view.View.FOCUS_UP else android.view.View.FOCUS_DOWN)
+                            true
+                        }
+                        else -> false
+                    }
+                }
+            }
+            addView(eventScroll, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
     }
 
@@ -136,6 +181,7 @@ class StartActivity : Activity() {
         status.setTextColor(if (on) Overlay.COLOUR else GREY)
         toggle.text = if (on) "Turn off" else "Turn on"
         direction.text = Direction.label()
+        autostart.text = Autostart.label(this)
 
         val parts = ArrayList<String>()
         if (on || Diag.translated > 0) {
@@ -146,6 +192,9 @@ class StartActivity : Activity() {
         if (Diag.deeplUsage.isNotEmpty()) parts += "DeepL ${Diag.deeplUsage} this month"
         stats.text = parts.joinToString("  ·  ")
         error.text = Diag.lastError.let { if (it.isEmpty()) "" else "Last error: $it" }
+        // Hold the list still while it is being read: new lines go on top and
+        // would push what's on screen down.
+        if (eventScroll.hasFocus() && eventScroll.scrollY > 0) return
         events.text = Diag.recent(EVENT_LINES).joinToString("\n")
             .ifEmpty { "Nothing yet. Turn it on and play something with German subtitles." }
     }
@@ -204,7 +253,10 @@ class StartActivity : Activity() {
         @Volatile var visible = false
             private set
         private const val REQUEST = 1
-        private const val EVENT_LINES = 24
+        /** All Diag keeps; the list scrolls. */
+        private const val EVENT_LINES = 300
+        private const val SCROLL_LINES = 5
+        private val FOCUSED = Color.rgb(0x22, 0x22, 0x28)
         private val GREY = Color.rgb(0x9A, 0x9A, 0xA0)
         private val LIGHT = Color.rgb(0xD8, 0xD8, 0xDC)
         private val RED = Color.rgb(0xFF, 0x8A, 0x80)
